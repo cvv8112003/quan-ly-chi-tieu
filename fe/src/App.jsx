@@ -1,7 +1,8 @@
+import * as XLSX from 'xlsx'
 import { useEffect, useMemo, useState } from 'react'
 import {
   LayoutDashboard, ArrowLeftRight, ChartNoAxesCombined, Tags, Settings, Search,
-  Plus, Bell, ChevronDown, Wallet, TrendingUp, TrendingDown, PiggyBank, ArrowUpRight,
+  Plus, Bell, Wallet, TrendingUp, TrendingDown, PiggyBank, ArrowUpRight,
   ArrowDownLeft, Coffee, Car, ShoppingBag, House, HeartPulse, GraduationCap,
   Clapperboard, CircleHelp, CalendarDays, Download, Link2, CheckCircle2, X,
   Pencil, Trash2, Menu, Sheet, RefreshCw, CircleDollarSign, Filter, MoreHorizontal,
@@ -62,23 +63,54 @@ async function loadTransactionsFromApi() {
   return result.data.map(normalizeTransaction)
 }
 
-async function saveAllTransactionsToApi(rows) {
+async function createTransactionApi(transaction) {
   let response
   try {
-    response = await fetch(`${API_BASE_URL}/api/transactions/replace-all`, {
-      method: 'PUT',
+    response = await fetch(`${API_BASE_URL}/api/transactions`, {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(rows.map(normalizeTransaction)),
+      body: JSON.stringify({
+        ...transaction,
+        id: null,
+        amount: Number(transaction.amount),
+      }),
     })
   } catch {
-    throw new Error('Không gửi được dữ liệu đến Backend. Hãy kiểm tra kết nối và cấu hình CORS.')
+    throw new Error('Không kết nối được Backend. Hãy kiểm tra Spring Boot đang chạy.')
   }
-
   const result = await readApiResponse(response)
-  if (!Array.isArray(result.data)) {
-    throw new Error('Backend chưa trả về danh sách giao dịch sau khi lưu.')
+  return result.data ? normalizeTransaction(result.data) : null
+}
+
+async function updateTransactionApi(id, transaction) {
+  let response
+  try {
+    response = await fetch(`${API_BASE_URL}/api/transactions/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...transaction,
+        id,
+        amount: Number(transaction.amount),
+      }),
+    })
+  } catch {
+    throw new Error('Không kết nối được Backend. Hãy kiểm tra Spring Boot đang chạy.')
   }
-  return result.data.map(normalizeTransaction)
+  const result = await readApiResponse(response)
+  return result.data ? normalizeTransaction(result.data) : null
+}
+
+async function deleteTransactionApi(id) {
+  let response
+  try {
+    response = await fetch(`${API_BASE_URL}/api/transactions/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    })
+  } catch {
+    throw new Error('Không kết nối được Backend. Hãy kiểm tra Spring Boot đang chạy.')
+  }
+  await readApiResponse(response)
 }
 
 function normalizeTransaction(row) {
@@ -168,28 +200,35 @@ function App() {
   function openEdit(t) { setEditing(t); setForm({ ...t, amount: String(t.amount) }); setShowForm(true) }
   async function saveTransaction(e) {
     e.preventDefault()
-    if (!form.title.trim() || !form.date || !form.type || Number(form.amount) <= 0) {
-      return flash('Vui lòng nhập tên, ngày và số tiền hợp lệ.')
+    if (
+      !form.title.trim() ||
+      !form.date ||
+      !form.type ||
+      !Number.isFinite(Number(form.amount)) ||
+      Number(form.amount) <= 0
+    ) {
+      flash('Vui lòng nhập tên, ngày và số tiền hợp lệ.')
+      return
     }
 
     const item = {
       ...form,
-      id: editing?.id || `tx-${Date.now()}`,
+      title: form.title.trim(),
       amount: Number(form.amount),
     }
 
     try {
       setSyncing(true)
-      // Đọc dữ liệu mới nhất để tránh ghi đè các giao dịch đã có.
-      const currentRows = await loadTransactionsFromApi()
-      const next = editing
-        ? currentRows.map(t => String(t.id) === String(editing.id) ? item : t)
-        : [item, ...currentRows]
-      const savedRows = await saveAllTransactionsToApi(next)
+      if (editing) {
+        await updateTransactionApi(editing.id, item)
+      } else {
+        await createTransactionApi(item)
+      }
 
-      setTransactions(savedRows)
+      const rows = await loadTransactionsFromApi()
+      setTransactions(rows)
       setShowForm(false)
-      setSheetStatus('Đã lưu dữ liệu qua Backend')
+      setSheetStatus('Đã đồng bộ dữ liệu từ Backend')
       flash(editing ? 'Đã cập nhật giao dịch thành công.' : 'Đã thêm giao dịch thành công.')
     } catch (error) {
       setSheetStatus('Không lưu được giao dịch')
@@ -204,12 +243,10 @@ function App() {
 
     try {
       setSyncing(true)
-      const currentRows = await loadTransactionsFromApi()
-      const next = currentRows.filter(t => String(t.id) !== String(id))
-      const savedRows = await saveAllTransactionsToApi(next)
-
-      setTransactions(savedRows)
-      setSheetStatus('Đã lưu dữ liệu qua Backend')
+      await deleteTransactionApi(id)
+      const rows = await loadTransactionsFromApi()
+      setTransactions(rows)
+      setSheetStatus('Đã đồng bộ dữ liệu từ Backend')
       flash('Đã xóa giao dịch thành công.')
     } catch (error) {
       setSheetStatus('Không xóa được giao dịch')
@@ -219,26 +256,14 @@ function App() {
     }
   }
 
-  function exportCsv() {
-    const rows = [['Ngày','Tên giao dịch','Loại','Danh mục','Số tiền','Phương thức','Ghi chú'], ...filtered.map(t => [t.date,t.title,t.type === 'income' ? 'Thu' : 'Chi',t.category,t.amount,t.method,t.note || ''])]
-    const csv = '\ufeff' + rows.map(row => row.map(v => `"${String(v).replaceAll('"','""')}"`).join(',')).join('')
-    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' })); a.download = `giao-dich-${selectedMonth}.csv`; a.click(); URL.revokeObjectURL(a.href)
-  }
   async function connectSheet() {
     setLoadingTransactions(true)
     setSheetStatus('Đang kiểm tra Backend...')
     try {
-      let response
-      try {
-        response = await fetch(`${API_BASE_URL}/api/health`)
-      } catch {
-        throw new Error('Không kết nối được Backend. Hãy khởi động Spring Boot trước.')
-      }
-      const health = await readApiResponse(response)
       const rows = await loadTransactionsFromApi()
       setTransactions(rows)
       setSheetStatus('Backend đã kết nối')
-      flash(`${health.message || 'Kết nối thành công.'} Đã tải ${rows.length} giao dịch.`)
+      flash(`Kết nối thành công. Đã tải ${rows.length} giao dịch.`)
     } catch (error) {
       setSheetStatus('Không kết nối được Backend')
       flash(error.message || 'Hãy kiểm tra Backend và cấu hình Google Apps Script.')
@@ -260,6 +285,59 @@ function App() {
     } finally {
       setSyncing(false)
     }
+  }
+
+  function exportExcel() {
+    // Các cột trong file Excel
+    const rows = [
+      [
+        'Ngày giao dịch',
+        'Tên giao dịch',
+        'Loại giao dịch',
+        'Danh mục',
+        'Số tiền (VND)',
+        'Phương thức thanh toán',
+        'Ghi chú',
+      ],
+      ...filtered.map((t) => [
+        t.date,
+        t.title,
+        t.type === 'income' ? 'Thu' : 'Chi',
+        t.category,
+        Number(t.amount) || 0,
+        t.method || '',
+        t.note || '',
+      ]),
+    ]
+
+    // Tạo trang tính Excel
+    const worksheet = XLSX.utils.aoa_to_sheet(rows)
+
+    // Điều chỉnh độ rộng các cột
+    worksheet['!cols'] = [
+      { wch: 16 },
+      { wch: 30 },
+      { wch: 18 },
+      { wch: 20 },
+      { wch: 18 },
+      { wch: 25 },
+      { wch: 40 },
+    ]
+
+    // Định dạng cột số tiền
+    for (let row = 1; row < rows.length; row++) {
+      const cell = XLSX.utils.encode_cell({ r: row, c: 4 })
+      if (worksheet[cell]) {
+        worksheet[cell].z = '#,##0'
+      }
+    }
+
+    // Tạo file Excel
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Giao dịch')
+
+    // Tải file về máy
+    XLSX.writeFile(workbook, `giao-dich-${selectedMonth}.xlsx`)
   }
 
   function updateBudget(name, value) { setBudgets(old => ({ ...old, [name]: Math.max(0, Number(value) || 0) })) }
@@ -313,7 +391,7 @@ function App() {
 
         <div className="mx-auto max-w-[1500px] space-y-6 p-4 md:p-8">
           {page === 'Tổng quan' && <>
-            <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-sm text-slate-500">Đây là tình hình tài chính của bạn trong</p><h2 className="mt-1 text-2xl font-extrabold">{MONTHS[Number(selectedMonth.slice(5))-1]} <span className="text-emerald-600">{selectedMonth.slice(0,4)}</span></h2></div><button onClick={exportCsv} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 hover:border-emerald-300"><Download size={16}/> Xuất báo cáo</button></div>
+            <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-sm text-slate-500">Đây là tình hình tài chính của bạn trong</p><h2 className="mt-1 text-2xl font-extrabold">{MONTHS[Number(selectedMonth.slice(5))-1]} <span className="text-emerald-600">{selectedMonth.slice(0,4)}</span></h2></div><button onClick={exportExcel} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 hover:border-emerald-300"><Download size={16}/> Xuất báo cáo</button></div>
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <StatCard title="Số dư tháng" amount={money(balance)} icon={Wallet} tone="green" caption="Thu nhập − Chi tiêu" />
               <StatCard title="Tổng thu nhập" amount={money(income)} icon={TrendingUp} tone="blue" caption={`${monthTransactions.filter(t=>t.type==='income').length} giao dịch thu`} />
@@ -339,7 +417,7 @@ function App() {
 
           {page === 'Giao dịch' && <section className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
             <div className="border-b border-slate-100 p-5 md:p-6"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-extrabold">Tất cả giao dịch</h2><p className="mt-1 text-sm text-slate-400">Quản lý các khoản thu và chi của bạn</p></div><button onClick={openAdd} className="flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-bold text-white"><Plus size={16}/> Thêm giao dịch</button></div>
-              <div className="mt-5 grid gap-3 md:grid-cols-[1fr_170px_190px_auto]"><label className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5"><Search size={17} className="text-slate-400"/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Tìm giao dịch..." className="w-full text-sm outline-none"/></label><select value={filterType} onChange={e=>setFilterType(e.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none"><option value="all">Tất cả loại</option><option value="income">Khoản thu</option><option value="expense">Khoản chi</option></select><select value={filterCategory} onChange={e=>setFilterCategory(e.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none"><option value="all">Tất cả danh mục</option>{CATEGORIES.map(c=><option key={c.name}>{c.name}</option>)}</select><button onClick={exportCsv} className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-600"><Download size={16}/> CSV</button></div>
+              <div className="mt-5 grid gap-3 md:grid-cols-[1fr_170px_190px_auto]"><label className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5"><Search size={17} className="text-slate-400"/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Tìm giao dịch..." className="w-full text-sm outline-none"/></label><select value={filterType} onChange={e=>setFilterType(e.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none"><option value="all">Tất cả loại</option><option value="income">Khoản thu</option><option value="expense">Khoản chi</option></select><select value={filterCategory} onChange={e=>setFilterCategory(e.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none"><option value="all">Tất cả danh mục</option>{CATEGORIES.map(c=><option key={c.name}>{c.name}</option>)}</select><button onClick={exportExcel} className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-600"><Download size={16}/> Excel</button></div>
             </div><TransactionTable rows={filtered} onEdit={openEdit} onDelete={deleteTransaction}/>
             {!filtered.length && <EmptyState text="Không tìm thấy giao dịch phù hợp."/>}
           </section>}
@@ -352,7 +430,7 @@ function App() {
 
           {page === 'Kết nối Backend' && <div className="mx-auto max-w-3xl space-y-6"><section className="overflow-hidden rounded-2xl border border-slate-100 bg-white"><div className="bg-gradient-to-r from-emerald-50 to-teal-50 p-6 md:p-8"><div className="flex items-center gap-4"><div className="rounded-2xl bg-white p-4 text-emerald-600 shadow-sm"><Sheet size={30}/></div><div><h2 className="text-xl font-extrabold">Kết nối Backend Spring Boot</h2><p className="mt-1 text-sm text-slate-500">Frontend lấy dữ liệu từ API Backend; Backend chịu trách nhiệm đọc và ghi Google Sheets.</p></div></div></div><div className="space-y-5 p-6 md:p-8"><div className="flex items-start gap-3 rounded-xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-900"><CircleHelp size={19} className="mt-0.5 shrink-0"/><div><strong>Kiểm tra cấu hình Backend</strong><p className="mt-1 leading-6">Đảm bảo Spring Boot đang chạy ở cổng 8080 và đã thiết lập biến môi trường <code>GOOGLE_SCRIPT_URL</code> trỏ đến URL Web App của Apps Script.</p></div></div><div className="rounded-xl border border-slate-200 p-4"><div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Địa chỉ API</div><div className="mt-1 break-all font-mono text-sm font-semibold text-slate-700">{API_BASE_URL}</div><div className="mt-2 text-xs text-slate-400">Cấu hình trong biến VITE_API_BASE_URL ở file .env của FE.</div></div><div className="flex flex-wrap gap-3"><button type="button" onClick={connectSheet} disabled={loadingTransactions} className="flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-600 disabled:opacity-50"><Link2 size={17}/> Kiểm tra kết nối</button><button type="button" onClick={syncSheet} disabled={syncing} className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"><RefreshCw size={16} className={syncing?'animate-spin':''}/> {syncing?'Đang tải...':'Tải lại giao dịch'}</button></div><div className="flex items-center gap-2 rounded-xl bg-slate-50 p-4 text-sm"><span className={`h-2.5 w-2.5 rounded-full ${sheetStatus.includes('kết nối') || sheetStatus.includes('đồng bộ') || sheetStatus.includes('Đã tải') || sheetStatus.includes('Đã lưu') ? 'bg-emerald-500' : 'bg-amber-400'}`}/><span className="font-semibold">Trạng thái:</span><span className="text-slate-500">{loadingTransactions ? 'Đang tải...' : syncing ? 'Đang đồng bộ...' : sheetStatus}</span></div><div className="border-t border-slate-100 pt-5"><h3 className="font-bold">Dữ liệu giao dịch</h3><div className="mt-3 grid gap-3 sm:grid-cols-2">{['Ngày giao dịch','Tên giao dịch','Thu hay chi','Danh mục','Số tiền VND','Phương thức thanh toán','Ghi chú','Mã giao dịch'].map(x=><div key={x} className="flex items-center gap-2 text-sm text-slate-600"><CheckCircle2 size={16} className="text-emerald-500"/>{x}</div>)}</div></div></div></section><div className="rounded-2xl border border-slate-100 bg-white p-5"><h3 className="font-extrabold">Luồng dữ liệu</h3><p className="mt-2 text-sm leading-6 text-slate-500">React gọi API Spring Boot tại địa chỉ trên. Backend đọc và ghi Google Sheets. Nếu không kết nối được, ứng dụng hiển thị lỗi thay vì tạo giao dịch mẫu.</p></div></div>}
 
-          {page === 'Cài đặt' && <section className="mx-auto max-w-2xl rounded-2xl border border-slate-100 bg-white p-6 md:p-8"><h2 className="text-lg font-extrabold">Cài đặt cá nhân</h2><p className="mt-1 text-sm text-slate-400">Quản lý dữ liệu trên trình duyệt này</p><div className="mt-6 divide-y divide-slate-100"><div className="flex items-center justify-between gap-4 py-4"><div><div className="font-bold">Sao lưu giao dịch</div><div className="mt-1 text-xs text-slate-400">Tải các giao dịch đang lọc về dạng CSV.</div></div><button onClick={exportCsv} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold"><Download size={15} className="mr-1 inline"/> Xuất CSV</button></div></div></section>}
+          {page === 'Cài đặt' && <section className="mx-auto max-w-2xl rounded-2xl border border-slate-100 bg-white p-6 md:p-8"><h2 className="text-lg font-extrabold">Cài đặt cá nhân</h2><p className="mt-1 text-sm text-slate-400">Quản lý dữ liệu trên trình duyệt này</p><div className="mt-6 divide-y divide-slate-100"><div className="flex items-center justify-between gap-4 py-4"><div><div className="font-bold">Sao lưu giao dịch</div><div className="mt-1 text-xs text-slate-400">Tải các giao dịch đang lọc về dạng Excel.</div></div><button onClick={exportExcel} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold"><Download size={15} className="mr-1 inline"/> Xuất Excel</button></div></div></section>}
         </div>
         <footer className="px-4 pb-7 text-center text-xs text-slate-400 md:px-8">© 2026 Ví Nhỏ · Chi tiêu rõ ràng, tương lai vững vàng.</footer>
       </main>
