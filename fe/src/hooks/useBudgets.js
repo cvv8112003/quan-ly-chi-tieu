@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
+import { API_BASE_URL } from '../api/transactionApi'
 
-// Mức ngân sách mặc định ban đầu cho người dùng mới
 export const DEFAULT_BUDGETS = {
   'Ăn uống': 2000000,
   'Di chuyển': 800000,
@@ -10,52 +10,80 @@ export const DEFAULT_BUDGETS = {
 }
 
 export function useBudgets(userId) {
-  // 1. Khởi tạo State ngân sách
-  const [budgets, setBudgets] = useState(() => {
-    if (!userId) return DEFAULT_BUDGETS
-    try {
-      const saved = localStorage.getItem(`vi-nho-budgets_${userId}`)
-      return saved ? JSON.parse(saved) : DEFAULT_BUDGETS
-    } catch {
-      return DEFAULT_BUDGETS
-    }
-  })
+  const [budgets, setBudgets] = useState(DEFAULT_BUDGETS)
+  const [loading, setLoading] = useState(false)
 
-  // 2. Lắng nghe khi userId thay đổi (khi đăng nhập / đổi tài khoản) -> Nạp lại ngân sách đúng người dùng
+  // 1. Tải ngân sách từ Backend / Google Sheets khi userId thay đổi
   useEffect(() => {
     if (!userId) {
       setBudgets(DEFAULT_BUDGETS)
       return
     }
 
-    try {
-      const saved = localStorage.getItem(`vi-nho-budgets_${userId}`)
-      if (saved) {
-        setBudgets(JSON.parse(saved))
-      } else {
-        // Lần đầu người dùng này đăng nhập: Tạo mặc định & lưu lại vào localStorage riêng
-        setBudgets(DEFAULT_BUDGETS)
-        localStorage.setItem(`vi-nho-budgets_${userId}`, JSON.stringify(DEFAULT_BUDGETS))
+    async function fetchBudgets() {
+      setLoading(true)
+      try {
+        const token = localStorage.getItem('vi-nho-token')
+        const response = await fetch(`${API_BASE_URL}/api/budgets?userId=${encodeURIComponent(userId)}`, {
+          headers: {
+            'Authorization': token ? `Bearer ${token}` : '',
+            'Content-Type': 'application/json'
+          }
+        })
+        const result = await response.json()
+
+        if (result.success && result.data && Object.keys(result.data).length > 0) {
+          setBudgets(result.data)
+          // Lưu cache lại ở LocalStorage
+          localStorage.setItem(`vi-nho-budgets_${userId}`, JSON.stringify(result.data))
+        } else {
+          // Nếu user mới chưa thiết lập ngân sách trên Sheet -> Dùng mặc định
+          setBudgets(DEFAULT_BUDGETS)
+        }
+      } catch (error) {
+        console.error('Lỗi tải ngân sách từ Google Sheets:', error)
+        // Nếu lỗi mạng, đọc tạm từ cache LocalStorage
+        const saved = localStorage.getItem(`vi-nho-budgets_${userId}`)
+        if (saved) setBudgets(JSON.parse(saved))
+      } finally {
+        setLoading(false)
       }
-    } catch {
-      setBudgets(DEFAULT_BUDGETS)
     }
+
+    fetchBudgets()
   }, [userId])
 
-  // 3. Hàm cập nhật ngân sách cho từng danh mục
-  const updateBudget = (categoryName, value) => {
-    const newValue = Math.max(0, Number(value) || 0)
-    setBudgets((prevBudgets) => {
-      const updated = { ...prevBudgets, [categoryName]: newValue }
-      
-      // Lưu ngay lập tức vào localStorage của user này
-      if (userId) {
-        localStorage.setItem(`vi-nho-budgets_${userId}`, JSON.stringify(updated))
-      }
-      return updated
-    })
+  // 2. Hàm cập nhật ngân sách & đồng bộ lên Google Sheets
+  const updateBudget = async (categoryName, value) => {
+    const numericValue = Math.max(0, Number(value) || 0)
+    const newBudgets = { ...budgets, [categoryName]: numericValue }
+
+    // Cập nhật State giao diện ngay lập tức cho mượt
+    setBudgets(newBudgets)
+
+    if (!userId) return
+
+    // Lưu cache LocalStorage ngay lập tức
+    localStorage.setItem(`vi-nho-budgets_${userId}`, JSON.stringify(newBudgets))
+
+    // Gọi API lưu lên Google Sheets
+    try {
+      const token = localStorage.getItem('vi-nho-token')
+      await fetch(`${API_BASE_URL}/api/budgets`, {
+        method: 'POST',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: userId,
+          budgets: newBudgets
+        }),
+      })
+    } catch (error) {
+      console.error('Lỗi lưu ngân sách lên Google Sheets:', error)
+    }
   }
 
-  // 4. Trả về state ngân sách và hàm cập nhật
-  return { budgets, updateBudget, setBudgets }
+  return { budgets, updateBudget, loading }
 }

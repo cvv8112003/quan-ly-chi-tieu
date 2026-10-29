@@ -33,11 +33,11 @@ export default function App() {
     } catch {
       return null
     }
-  })
+  })  
 
   const [transactions, setTransactions] = useState([])
   const [loadingTransactions, setLoadingTransactions] = useState(false)
-  const {budgets, updateBudget } = useBudgets(user?.id)
+  const { budgets, updateBudget } = useBudgets(user?.id)
   const [selectedMonth, setSelectedMonth] = useState(initialMonth)
   const [search, setSearch] = useState('')
   const [filterType, setFilterType] = useState('all')
@@ -50,7 +50,10 @@ export default function App() {
   const [serverStatus, setServerStatus] = useState('')
 
   const handleLogout = () => {
-    logoutUser(() => setIsLoggingOut(true))
+    logoutUser(() => {
+      localStorage.removeItem('vi-nho-user')
+      setUser(null)
+    })
   }
 
   useEffect(() => localStorage.setItem('vi-nho-budgets', JSON.stringify(budgets)), [budgets])
@@ -70,7 +73,6 @@ export default function App() {
       
       try {
         setTransactions([])
-        
         const rows = await loadTransactionsFromApi()
         if (cancelled) return
         
@@ -240,16 +242,52 @@ export default function App() {
     XLSX.writeFile(workbook, `giao-dich-${selectedMonth}.xlsx`)
   }
 
+  // Hàm xử lý gọi API đổi mật khẩu gửi tới Spring Boot
+  const handleUpdatePassword = async ({ currentPassword, newPassword }) => {
+    try {
+      const userId = user?.id || user?.email;
+
+      if (!userId) {
+        alert("Không tìm thấy thông tin tài khoản. Vui lòng đăng nhập lại!");
+        return;
+      }
+
+      const response = await fetch('http://localhost:8080/api/auth/password', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: userId,
+          currentPassword: currentPassword,
+          newPassword: newPassword
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok && (data.success !== false)) {
+        alert(data.message || "Cập nhật mật khẩu thành công!");
+      } else {
+        alert(data.message || "Có lỗi xảy ra khi cập nhật mật khẩu.");
+      }
+    } catch (error) {
+      console.error("Lỗi kết nối API:", error);
+      alert("Không thể kết nối đến máy chủ.");
+    }
+  };
+
   return (
     <BrowserRouter>
       <Routes>
-        {/* Route đăng nhập / đăng ký (Công khai) */}
         <Route 
           path="/login" 
-          element={<AuthPage onAuthSuccess={(u) => setUser(u)} />} 
+          element={<AuthPage onAuthSuccess={(u) => {
+            setUser(u);
+            localStorage.setItem('vi-nho-user', JSON.stringify(u));
+          }} />} 
         />
 
-        {/* Các Route được bảo vệ bởi ProtectedRoute */}
         <Route
           path="/"
           element={
@@ -347,7 +385,13 @@ export default function App() {
           />
           <Route
             path="settings"
-            element={<SettingsPage exportExcel={exportExcel} />}
+            element={
+              <SettingsPage 
+                user={user} 
+                onUpdatePassword={handleUpdatePassword} 
+                exportExcel={exportExcel} 
+              />
+            }
           />
         </Route>
 

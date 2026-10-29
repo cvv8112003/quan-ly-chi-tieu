@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.server.ResponseStatusException;
 import vn.vinho.backend.dto.TransactionDto;
+import vn.vinho.backend.dto.UpdatePasswordRequest;
 import vn.vinho.backend.dto.auth.AuthResponse;
 
 import java.util.List;
@@ -39,7 +40,6 @@ public class GoogleSheetsService {
         String url = requireScriptUrl();
 
         try {
-            // Xây dựng URL request đính kèm action=list và userId (nếu có)
             StringBuilder requestUrl = new StringBuilder(url)
                     .append(url.contains("?") ? "&" : "?")
                     .append("action=list");
@@ -91,14 +91,12 @@ public class GoogleSheetsService {
             );
         }
 
-        // Sinh ID mới nếu chưa có ID.
         String id = transaction.id();
 
         if (id == null || id.isBlank()) {
             id = java.util.UUID.randomUUID().toString();
         }
 
-        // Tạo DTO mới giữ nguyên userId từ request gửi lên
         TransactionDto newTransaction = new TransactionDto(
                 id,
                 transaction.date(),
@@ -130,7 +128,6 @@ public class GoogleSheetsService {
             );
         }
 
-        // Tạo DTO mới với ID lấy từ URL.
         TransactionDto updatedTransaction = new TransactionDto(
                 id,
                 transaction.date(),
@@ -163,6 +160,68 @@ public class GoogleSheetsService {
         }
 
         callScript("delete", Map.of("id", id));
+    }
+
+    /**
+     * Lấy danh sách ngân sách (Budgets) của user từ Google Sheets.
+     */
+    public Map<String, Object> getBudgets(String userId) {
+        String url = requireScriptUrl();
+
+        try {
+            StringBuilder requestUrl = new StringBuilder(url)
+                    .append(url.contains("?") ? "&" : "?")
+                    .append("action=getBudgets");
+
+            if (userId != null && !userId.isBlank()) {
+                requestUrl.append("&userId=").append(userId.trim());
+            }
+
+            String body = restClient.get()
+                    .uri(requestUrl.toString())
+                    .retrieve()
+                    .body(String.class);
+
+            JsonNode root = objectMapper.readTree(body);
+
+            if (!root.path("success").asBoolean(false)) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_GATEWAY,
+                        root.path("message").asText("Không đọc được dữ liệu ngân sách từ Google Sheets.")
+                );
+            }
+
+            return objectMapper.convertValue(
+                    root.path("data"),
+                    new TypeReference<Map<String, Object>>() {}
+            );
+
+        } catch (ResponseStatusException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_GATEWAY,
+                    "Lỗi khi đọc dữ liệu ngân sách từ Google Sheets.",
+                    ex
+            );
+        }
+    }
+
+    /**
+     * Lưu/Cập nhật danh sách ngân sách (Budgets) lên Google Sheets.
+     */
+    public void saveBudgets(String userId, Map<String, ? extends Number> budgets) {
+        if (userId == null || userId.isBlank()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "User ID không hợp lệ."
+            );
+        }
+
+        callScript("saveBudgets", Map.of(
+                "userId", userId,
+                "budgets", budgets != null ? budgets : Map.of()
+        ));
     }
 
     /**
@@ -211,7 +270,7 @@ public class GoogleSheetsService {
                 throw new ResponseStatusException(
                         HttpStatus.BAD_GATEWAY,
                         root.path("message").asText(
-                                "Không thể xử lý giao dịch."
+                                "Không thể xử lý yêu cầu."
                         )
                 );
             }
@@ -223,8 +282,7 @@ public class GoogleSheetsService {
         } catch (Exception ex) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_GATEWAY,
-                    "Lỗi khi xử lý giao dịch trên Google Sheets: "
-                            + ex.getMessage(),
+                    "Lỗi khi xử lý trên Google Sheets: " + ex.getMessage(),
                     ex
             );
         }
@@ -282,6 +340,26 @@ public class GoogleSheetsService {
                 "name", name != null ? name : ""
         ));
         return parseAuthResult(root);
+    }
+
+    /**
+     * Đổi / Tạo mật khẩu mới cho người dùng.
+     */
+    public Map<String, Object> updatePassword(UpdatePasswordRequest request) {
+        if (request == null || request.getUserId() == null || request.getUserId().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User ID không hợp lệ.");
+        }
+
+        JsonNode root = callScript("update-password", Map.of(
+                "userId", request.getUserId(),
+                "currentPassword", request.getCurrentPassword() != null ? request.getCurrentPassword() : "",
+                "newPassword", request.getNewPassword() != null ? request.getNewPassword() : ""
+        ));
+
+        return Map.of(
+                "success", true,
+                "message", root.path("message").asText("Cập nhật mật khẩu thành công.")
+        );
     }
 
     private AuthResponse parseAuthResult(JsonNode root) {
