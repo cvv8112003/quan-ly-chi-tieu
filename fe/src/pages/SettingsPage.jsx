@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Download, User, Camera, Mail, Lock, ShieldCheck, KeyRound, Eye, EyeOff, ChevronDown } from 'lucide-react'
+import { Download, User, Camera, Mail, Lock, ShieldCheck, KeyRound, Eye, EyeOff, ChevronDown, LogOut } from 'lucide-react'
 
-export function SettingsPage({ user, onUpdatePassword, exportExcel }) {
+export function SettingsPage({ user, onUpdatePassword, exportExcel, onLogout  }) {
   const [storedUser, setStoredUser] = useState({})
   const [isPasswordSectionOpen, setIsPasswordSectionOpen] = useState(false)
 
@@ -279,6 +279,29 @@ export function SettingsPage({ user, onUpdatePassword, exportExcel }) {
               <Download size={15} /> Xuất Excel
             </button>
           </div>
+        </div>
+      </section>
+      {/* 4. ĐĂNG XUẤT */}
+      <section className="overflow-hidden rounded-2xl border border-red-100 bg-white shadow-sm">
+        <div className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between md:px-8">
+          <div>
+            <h2 className="flex items-center gap-2 text-base font-extrabold text-slate-800">
+              <LogOut size={18} className="text-red-500" />
+              Đăng xuất tài khoản
+            </h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Đăng xuất khỏi tài khoản hiện tại trên thiết bị này.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onLogout}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-5 py-2.5 text-sm font-bold text-red-600 transition-colors hover:bg-red-100 active:scale-[0.98]"
+          >
+            <LogOut size={16} />
+            Đăng xuất
+          </button>
         </div>
       </section>
     </div>

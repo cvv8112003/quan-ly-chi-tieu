@@ -391,6 +391,7 @@ export default function App() {
                 user={user} 
                 onUpdatePassword={handleUpdatePassword} 
                 exportExcel={exportExcel} 
+                onLogout={handleLogout}
               />
             }
           />
