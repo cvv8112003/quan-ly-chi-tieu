@@ -15,6 +15,6 @@ export const logoutUser = (onBeforeRedirect) => {
   
   // 3. Điều hướng về trang login sau độ trễ ngắn
   setTimeout(() => {
-    window.location.href = '/login'
+    window.location.href = '/'
   }, 500)
 }
