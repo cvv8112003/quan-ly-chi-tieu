@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import * as XLSX from 'xlsx'
+import API_BASE_URL from './config/api';
 
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { AuthPage } from './pages/AuthPage'
@@ -252,7 +253,7 @@ export default function App() {
         return;
       }
 
-      const response = await fetch('http://localhost:8080/api/auth/password', {
+      const response = await fetch(`${API_BASE_URL}/api/auth/password`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
