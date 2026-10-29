@@ -14,7 +14,5 @@ export const logoutUser = (onBeforeRedirect) => {
   localStorage.clear()
   
   // 3. Điều hướng về trang login sau độ trễ ngắn
-  setTimeout(() => {
-    window.location.href = '/'
-  }, 500)
+    window.location.replace("/")
 }
