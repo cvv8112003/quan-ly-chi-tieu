@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import * as XLSX from 'xlsx'
+
+import { ProtectedRoute } from './components/ProtectedRoute'
+import { AuthPage } from './pages/AuthPage'
 
 import { Layout } from './components/Layout'
 import { TransactionModal } from './components/TransactionModal'
@@ -19,17 +22,22 @@ import {
   updateTransactionApi,
   deleteTransactionApi,
 } from './api/transactionApi'
+import { logoutUser } from './utils/auth'
+
+import { useBudgets } from './hooks/useBudgets'
 
 export default function App() {
+  const [user, setUser] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('vi-nho-user')) || null
+    } catch {
+      return null
+    }
+  })
+
   const [transactions, setTransactions] = useState([])
   const [loadingTransactions, setLoadingTransactions] = useState(false)
-  const [budgets, setBudgets] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('vi-nho-budgets')) || {
-        'Ăn uống': 2000000, 'Di chuyển': 800000, 'Mua sắm': 1500000, 'Nhà cửa': 2500000, 'Giải trí': 500000
-      }
-    } catch { return {} }
-  })
+  const {budgets, updateBudget } = useBudgets(user?.id)
   const [selectedMonth, setSelectedMonth] = useState(initialMonth)
   const [search, setSearch] = useState('')
   const [filterType, setFilterType] = useState('all')
@@ -41,17 +49,31 @@ export default function App() {
   const [syncing, setSyncing] = useState(false)
   const [serverStatus, setServerStatus] = useState('')
 
+  const handleLogout = () => {
+    logoutUser(() => setIsLoggingOut(true))
+  }
+
   useEffect(() => localStorage.setItem('vi-nho-budgets', JSON.stringify(budgets)), [budgets])
 
   useEffect(() => {
     let cancelled = false
     async function fetchTransactions() {
+      if (!user?.id) {
+        setTransactions([])
+        setLoadingTransactions(false)
+        return
+      }
+
       setLoadingTransactions(true)
       setServerStatus('Đang đồng bộ giao dịch từ máy chủ...')
       setSheetStatus('Đang tải dữ liệu từ Backend...')
+      
       try {
+        setTransactions([])
+        
         const rows = await loadTransactionsFromApi()
         if (cancelled) return
+        
         setTransactions(rows)
         setSheetStatus('Đã tải dữ liệu từ Backend')
       } catch (error) {
@@ -65,9 +87,10 @@ export default function App() {
         }
       }
     }
+
     fetchTransactions()
     return () => { cancelled = true }
-  }, [])
+  }, [user?.id])
 
   const monthTransactions = useMemo(() => transactions.filter((t) => monthKey(t.date) === selectedMonth), [transactions, selectedMonth])
   const income = monthTransactions.filter((t) => t.type === 'income').reduce((s, t) => s + Number(t.amount), 0)
@@ -217,25 +240,32 @@ export default function App() {
     XLSX.writeFile(workbook, `giao-dich-${selectedMonth}.xlsx`)
   }
 
-  function updateBudget(name, value) {
-    setBudgets((old) => ({ ...old, [name]: Math.max(0, Number(value) || 0) }))
-  }
-
   return (
     <BrowserRouter>
       <Routes>
+        {/* Route đăng nhập / đăng ký (Công khai) */}
+        <Route 
+          path="/login" 
+          element={<AuthPage onAuthSuccess={(u) => setUser(u)} />} 
+        />
+
+        {/* Các Route được bảo vệ bởi ProtectedRoute */}
         <Route
           path="/"
           element={
-            <Layout
-              sheetStatus={sheetStatus}
-              selectedMonth={selectedMonth}
-              setSelectedMonth={setSelectedMonth}
-              openAdd={openAdd}
-              flash={flash}
-              notice={notice}
-              serverStatus={serverStatus}
-            />
+            <ProtectedRoute user={user}>
+              <Layout
+                user={user}
+                onLogout={handleLogout}
+                sheetStatus={sheetStatus}
+                selectedMonth={selectedMonth}
+                setSelectedMonth={setSelectedMonth}
+                openAdd={openAdd}
+                flash={flash}
+                notice={notice}
+                serverStatus={serverStatus}
+              />
+            </ProtectedRoute>
           }
         >
           <Route
@@ -320,6 +350,8 @@ export default function App() {
             element={<SettingsPage exportExcel={exportExcel} />}
           />
         </Route>
+
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
 
       <TransactionModal

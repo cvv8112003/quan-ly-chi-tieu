@@ -11,5 +11,6 @@ public record TransactionDto(
         String category,
         @Positive(message = "Số tiền phải lớn hơn 0") double amount,
         String method,
-        String note
+        String note,
+        String userId
 ) {}

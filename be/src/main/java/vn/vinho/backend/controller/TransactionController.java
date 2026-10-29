@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -32,10 +33,12 @@ public class TransactionController {
      * Lấy danh sách giao dịch.
      */
     @GetMapping
-    public ApiResponse<List<TransactionDto>> list() {
+    public ApiResponse<List<TransactionDto>> list(
+            @RequestParam(required = false) String userId
+    ) {
         return ApiResponse.ok(
                 "Lấy danh sách giao dịch thành công",
-                googleSheetsService.getTransactions()
+                googleSheetsService.getTransactions(userId)
         );
     }
 

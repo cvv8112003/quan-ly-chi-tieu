@@ -15,6 +15,42 @@ async function readApiResponse(response) {
   return result
 }
 
+// Xử lý user & token
+function getAuthHeader() {
+  const token = localStorage.getItem('vi-nho-token')
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+function getCurrentUserId() {
+  try {
+    const user = JSON.parse(localStorage.getItem('vi-nho-user'))
+    return user ? user.id : ''
+  } catch {
+    return ''
+  }
+}
+
+export async function loadTransactionsFromApi() {
+  const userId = getCurrentUserId()
+  let response
+  try {
+    const url = userId 
+      ? `${API_BASE_URL}/api/transactions?userId=${encodeURIComponent(userId)}`
+      : `${API_BASE_URL}/api/transactions`
+
+    response = await fetch(url, {
+      headers: {
+        ...getAuthHeader(),
+        'Content-Type': 'application/json',
+      },
+    })
+  } catch {
+    throw new Error('Không kết nối được Backend. Hãy kiểm tra Spring Boot.')
+  }
+  const result = await readApiResponse(response)
+  return (result.data || []).map(normalizeTransaction)
+}
+
 function normalizeTransaction(row) {
   return {
     id: String(row.id ?? ''),
@@ -25,52 +61,49 @@ function normalizeTransaction(row) {
     amount: Number(row.amount ?? 0),
     method: String(row.method ?? row.paymentMethod ?? ''),
     note: String(row.note ?? ''),
+    userId: String(row.userId ?? ''), // Thêm userId vào đây cho đồng bộ
   }
-}
-
-export async function loadTransactionsFromApi() {
-  let response
-  try {
-    response = await fetch(`${API_BASE_URL}/api/transactions`)
-  } catch {
-    throw new Error('Không kết nối được Backend. Hãy kiểm tra Spring Boot đang chạy tại http://localhost:8080.')
-  }
-  const result = await readApiResponse(response)
-  if (!Array.isArray(result.data)) {
-    throw new Error('API giao dịch không trả về danh sách dữ liệu hợp lệ.')
-  }
-  return result.data.map(normalizeTransaction)
 }
 
 export async function createTransactionApi(transaction) {
+  const userId = getCurrentUserId()
   let response
   try {
     response = await fetch(`${API_BASE_URL}/api/transactions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        ...getAuthHeader(),
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify({
         ...transaction,
         id: null,
         amount: Number(transaction.amount),
+        userId: userId, 
       }),
     })
   } catch {
-    throw new Error('Không kết nối được Backend. Hãy kiểm tra Spring Boot đang chạy.')
+    throw new Error('Không kết nối được Backend.')
   }
   const result = await readApiResponse(response)
   return result.data ? normalizeTransaction(result.data) : null
 }
 
 export async function updateTransactionApi(id, transaction) {
+  const userId = getCurrentUserId() // 2. ĐÃ FIX: Khai báo đầy đủ userId để tránh lỗi ReferenceError
   let response
   try {
     response = await fetch(`${API_BASE_URL}/api/transactions/${encodeURIComponent(id)}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        ...getAuthHeader(),
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify({
         ...transaction,
         id,
         amount: Number(transaction.amount),
+        userId: userId,
       }),
     })
   } catch {
@@ -85,6 +118,9 @@ export async function deleteTransactionApi(id) {
   try {
     response = await fetch(`${API_BASE_URL}/api/transactions/${encodeURIComponent(id)}`, {
       method: 'DELETE',
+      headers: {
+        ...getAuthHeader(),
+      },
     })
   } catch {
     throw new Error('Không kết nối được Backend. Hãy kiểm tra Spring Boot đang chạy.')

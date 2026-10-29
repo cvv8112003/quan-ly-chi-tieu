@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { X, ArrowUpRight, ArrowDownLeft, Loader2 } from 'lucide-react'
 import { CATEGORIES, defaultDate } from '../constants/categories'
 
+import { CurrencyInput } from '../components/CurrencyInput'
+
 export function TransactionModal({ show, editing, syncing, onClose, onSave }) {
   const [form, setForm] = useState({
     title: '', amount: '', type: 'expense', category: 'Ăn uống', date: defaultDate, method: 'Chuyển khoản', note: ''

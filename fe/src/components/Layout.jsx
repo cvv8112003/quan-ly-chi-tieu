@@ -1,16 +1,45 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import {
   LayoutDashboard, ArrowLeftRight, ChartNoAxesCombined, Tags, Settings,
   Wallet, PiggyBank, ArrowUpRight, Bell, Plus, CalendarDays, Menu, Sheet,
-  MoreHorizontal, Loader2, CheckCircle2
+  Loader2, CheckCircle2, LogOut
 } from 'lucide-react'
 import { MONTHS } from '../constants/categories'
+import { logoutUser } from '../utils/auth'
 
 export function Layout({
   sheetStatus, selectedMonth, setSelectedMonth, openAdd, flash, notice, serverStatus
 }) {
   const [mobileNav, setMobileNav] = useState(false)
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
+
+  // 1. Lấy thông tin user đăng nhập từ localStorage
+  const [user, setUser] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('vi-nho-user')) || null
+    } catch {
+      return null
+    }
+  })
+
+  // Cập nhật lại user nếu localStorage thay đổi
+  useEffect(() => {
+    const handleStorageChange = () => {
+      try {
+        setUser(JSON.parse(localStorage.getItem('vi-nho-user')) || null)
+      } catch {
+        setUser(null)
+      }
+    }
+    window.addEventListener('storage', handleStorageChange)
+    return () => window.removeEventListener('storage', handleStorageChange)
+  }, [])
+
+  // Tạo avatar viết tắt từ Tên người dùng
+  const userName = user?.name || user?.email?.split('@')[0] || 'Người dùng'
+  const userInitial = userName.charAt(0).toUpperCase()
+  const userEmail = user?.email || 'Chưa cập nhật email'
 
   const nav = [
     { label: 'Tổng quan', path: '/', icon: LayoutDashboard },
@@ -20,6 +49,19 @@ export function Layout({
     { label: 'Danh mục', path: '/categories', icon: Tags },
     { label: 'Kết nối Backend', path: '/connect', icon: Sheet },
   ]
+
+  const onLogout = () => {
+    logoutUser(() => setIsLoggingOut(true))
+  }
+
+  if (isLoggingOut) {
+    return (
+      <div className="fixed inset-0 flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm z-50">
+        <Loader2 className="w-10 h-10 animate-spin text-emerald-500 mb-2" />
+        <p className="text-slate-600 font-bold text-sm">Đang đăng xuất...</p>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-[#f7f8fc] text-slate-800">
@@ -77,14 +119,28 @@ export function Layout({
           <NavLink to="/settings" className="mt-5 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-500 hover:bg-slate-50">
             <Settings size={18} /> Cài đặt
           </NavLink>
+
+          {/* 2. HIỂN THỊ THÔNG TIN USER Ở BOTTOM SIDEBAR */}
           <div className="mt-4 flex items-center gap-3 border-t border-slate-100 px-2 pt-5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-100 font-bold text-orange-600">V</div>
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-bold">Ví cá nhân</div>
-              <div className="text-xs text-slate-400">Gói miễn phí</div>
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 font-bold text-emerald-700 shadow-sm">
+              {userInitial}
             </div>
-            <MoreHorizontal size={18} className="text-slate-400" />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-bold text-slate-800" title={userName}>
+                {userName}
+              </div>
+              <div className="truncate text-xs text-slate-400" title={userEmail}>
+                {userEmail}
+              </div>
+            </div>
           </div>
+
+          <button
+            onClick={onLogout}
+            className="mt-3 flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-xs font-bold text-rose-500 transition hover:bg-rose-50"
+          >
+            <LogOut size={16} /> Đăng xuất tài khoản
+          </button>
         </div>
       </aside>
 
@@ -96,7 +152,10 @@ export function Layout({
               <Menu size={21} />
             </button>
             <div>
-              <div className="text-xs text-slate-400">Xin chào, chúc bạn một ngày tốt lành 👋</div>
+              {/* 3. HIỂN THỊ LỜI CHÀO THEO TÊN USER NẾU CÓ */}
+              <div className="text-xs text-slate-400">
+                Xin chào <span className="font-semibold text-slate-600">{userName}</span>, chúc bạn một ngày tốt lành 👋
+              </div>
               <h1 className="mt-0.5 text-lg font-extrabold tracking-tight md:text-xl">Ví Nhỏ Finance</h1>
             </div>
           </div>

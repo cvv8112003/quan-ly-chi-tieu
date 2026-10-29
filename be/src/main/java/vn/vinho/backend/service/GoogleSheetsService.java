@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.server.ResponseStatusException;
 import vn.vinho.backend.dto.TransactionDto;
+import vn.vinho.backend.dto.auth.AuthResponse;
 
 import java.util.List;
 import java.util.Map;
@@ -32,18 +33,23 @@ public class GoogleSheetsService {
     }
 
     /**
-     * Lấy danh sách giao dịch.
+     * Lấy danh sách giao dịch theo userId từ Google Sheets.
      */
-    public List<TransactionDto> getTransactions() {
+    public List<TransactionDto> getTransactions(String userId) {
         String url = requireScriptUrl();
 
         try {
-            String requestUrl = url
-                    + (url.contains("?") ? "&" : "?")
-                    + "action=list";
+            // Xây dựng URL request đính kèm action=list và userId (nếu có)
+            StringBuilder requestUrl = new StringBuilder(url)
+                    .append(url.contains("?") ? "&" : "?")
+                    .append("action=list");
+
+            if (userId != null && !userId.isBlank()) {
+                requestUrl.append("&userId=").append(userId.trim());
+            }
 
             String body = restClient.get()
-                    .uri(requestUrl)
+                    .uri(requestUrl.toString())
                     .retrieve()
                     .body(String.class);
 
@@ -74,25 +80,25 @@ public class GoogleSheetsService {
         }
     }
 
-        /**
-         * Thêm một giao dịch mới.
-         */
-        public TransactionDto createTransaction(TransactionDto transaction) {
+    /**
+     * Thêm một giao dịch mới.
+     */
+    public TransactionDto createTransaction(TransactionDto transaction) {
         if (transaction == null) {
-                throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        "Giao dịch không hợp lệ."
-                );
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Giao dịch không hợp lệ."
+            );
         }
 
         // Sinh ID mới nếu chưa có ID.
         String id = transaction.id();
 
         if (id == null || id.isBlank()) {
-                id = java.util.UUID.randomUUID().toString();
+            id = java.util.UUID.randomUUID().toString();
         }
 
-        // Tạo DTO mới vì record không có setter.
+        // Tạo DTO mới giữ nguyên userId từ request gửi lên
         TransactionDto newTransaction = new TransactionDto(
                 id,
                 transaction.date(),
@@ -101,27 +107,27 @@ public class GoogleSheetsService {
                 transaction.category(),
                 transaction.amount(),
                 transaction.method(),
-                transaction.note()
+                transaction.note(),
+                transaction.userId()
         );
 
         callScript("create", Map.of("transaction", newTransaction));
 
-        return findById(id);
-        }
+        return findById(id, transaction.userId());
+    }
 
-
-        /**
-         * Cập nhật một giao dịch theo ID.
-         */
-        public TransactionDto updateTransaction(
-                String id,
-                TransactionDto transaction
-        ) {
+    /**
+     * Cập nhật một giao dịch theo ID.
+     */
+    public TransactionDto updateTransaction(
+            String id,
+            TransactionDto transaction
+    ) {
         if (id == null || id.isBlank() || transaction == null) {
-                throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        "ID hoặc thông tin giao dịch không hợp lệ."
-                );
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "ID hoặc thông tin giao dịch không hợp lệ."
+            );
         }
 
         // Tạo DTO mới với ID lấy từ URL.
@@ -133,7 +139,8 @@ public class GoogleSheetsService {
                 transaction.category(),
                 transaction.amount(),
                 transaction.method(),
-                transaction.note()
+                transaction.note(),
+                transaction.userId()
         );
 
         callScript(
@@ -141,8 +148,8 @@ public class GoogleSheetsService {
                 Map.of("transaction", updatedTransaction)
         );
 
-        return findById(id);
-        }
+        return findById(id, transaction.userId());
+    }
 
     /**
      * Xóa một giao dịch theo ID.
@@ -159,20 +166,20 @@ public class GoogleSheetsService {
     }
 
     /**
-     * Tìm giao dịch theo ID.
+     * Tìm giao dịch theo ID và userId.
      */
-        private TransactionDto findById(String id) {
-        return getTransactions().stream()
+    private TransactionDto findById(String id, String userId) {
+        return getTransactions(userId).stream()
                 .filter(item -> id.equals(item.id()))
                 .findFirst()
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "Không tìm thấy giao dịch có ID: " + id
                 ));
-        }
+    }
 
     /**
-     * Gửi yêu cầu đến Google Apps Script.
+     * Gửi yêu cầu đến Google Apps Script (POST).
      */
     private JsonNode callScript(String action, Map<String, ?> data) {
         String url = requireScriptUrl();
@@ -241,5 +248,52 @@ public class GoogleSheetsService {
         }
 
         return scriptUrl.trim();
+    }
+
+    /**
+     * Đăng ký tài khoản mới.
+     */
+    public AuthResponse register(String email, String password, String name) {
+        JsonNode root = callScript("register", Map.of(
+                "email", email,
+                "password", password != null ? password : "",
+                "name", name != null ? name : ""
+        ));
+        return parseAuthResult(root);
+    }
+
+    /**
+     * Đăng nhập tài khoản.
+     */
+    public AuthResponse login(String email, String password) {
+        JsonNode root = callScript("login", Map.of(
+                "email", email,
+                "password", password != null ? password : ""
+        ));
+        return parseAuthResult(root);
+    }
+
+    /**
+     * Đăng nhập / Đăng ký bằng Google (Gmail).
+     */
+    public AuthResponse googleLogin(String email, String name) {
+        JsonNode root = callScript("google-login", Map.of(
+                "email", email,
+                "name", name != null ? name : ""
+        ));
+        return parseAuthResult(root);
+    }
+
+    private AuthResponse parseAuthResult(JsonNode root) {
+        String token = root.path("token").asText("");
+        JsonNode dataNode = root.path("data");
+
+        AuthResponse.UserData user = new AuthResponse.UserData(
+                dataNode.path("id").asText(""),
+                dataNode.path("email").asText(""),
+                dataNode.path("name").asText("")
+        );
+
+        return new AuthResponse(token, user);
     }
 }
