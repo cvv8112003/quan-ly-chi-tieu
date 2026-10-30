@@ -1,4 +1,3 @@
-
 package vn.vinho.backend.config;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -11,7 +10,7 @@ import java.util.Arrays;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
-    @Value("${app.cors.allowed-origins:http://localhost:5173,http://localhost:3000}")
+    @Value("${app.cors.allowed-origins:http://localhost:5173,http://localhost:3000,https://quan-ly-chi-tieu-ca-nhan-six.vercel.app,https://localhost}")
     private String allowedOrigins;
 
     @Override
@@ -22,7 +21,15 @@ public class WebConfig implements WebMvcConfigurer {
 
         registry.addMapping("/api/**")
                 .allowedOrigins(origins)
-                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-                .allowedHeaders("*");
+                .allowedMethods(
+                        "GET",
+                        "POST",
+                        "PUT",
+                        "PATCH",
+                        "DELETE",
+                        "OPTIONS"
+                )
+                .allowedHeaders("*")
+                .maxAge(3600);
     }
 }
