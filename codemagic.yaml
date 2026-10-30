@@ -1,0 +1,47 @@
+workflows:
+  ios-workflow:
+    name: Vi Nho iOS
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+
+    integrations:
+      app_store_connect: codemagic
+
+    environment:
+      ios_signing:
+        distribution_type: development
+        bundle_identifier: com.quanlychitieu.app
+      vars:
+        XCODE_PROJECT: "fe/ios/App/App.xcodeproj"
+        XCODE_SCHEME: "App"
+      node: 22
+
+    scripts:
+      - name: Install dependencies
+        script: |
+          cd fe
+          npm ci
+
+      - name: Build React
+        script: |
+          cd fe
+          npm run build
+
+      - name: Sync Capacitor
+        script: |
+          cd fe
+          npx cap sync ios
+
+      - name: Build iOS app
+        script: |
+          xcodebuild \
+            -project "$CM_BUILD_DIR/$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Debug \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$CM_BUILD_DIR/build/App.xcarchive" \
+            archive
+
+    artifacts:
+      - build/App.xcarchive
