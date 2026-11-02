@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import * as XLSX from 'xlsx'
 import API_BASE_URL from './config/api';
 
@@ -279,7 +279,7 @@ export default function App() {
   };
 
   return (
-    <BrowserRouter>
+    <HashRouter>
       <Routes>
         <Route 
           path="/login" 
@@ -407,6 +407,6 @@ export default function App() {
         onClose={() => setShowForm(false)}
         onSave={saveTransaction}
       />
-    </BrowserRouter>
+    </HashRouter>
   )
 }

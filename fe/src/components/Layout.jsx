@@ -2,14 +2,14 @@ import { useState, useEffect } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import {
   LayoutDashboard, ArrowLeftRight, ChartNoAxesCombined, Tags, Settings,
-  Wallet, PiggyBank, ArrowUpRight, Bell, Plus, CalendarDays, Menu, Sheet,
+  Wallet, PiggyBank, ArrowUpRight, Plus, CalendarDays, Menu, Sheet,
   Loader2, CheckCircle2, LogOut
 } from 'lucide-react'
 import { MONTHS } from '../constants/categories'
 import { logoutUser } from '../utils/auth'
 
 export function Layout({
-  sheetStatus, selectedMonth, setSelectedMonth, openAdd, flash, notice, serverStatus
+  sheetStatus, selectedMonth, setSelectedMonth, openAdd, notice, serverStatus
 }) {
   const [mobileNav, setMobileNav] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
@@ -154,26 +154,34 @@ export function Layout({
             <div>
               {/* 3. HIỂN THỊ LỜI CHÀO THEO TÊN USER NẾU CÓ */}
               <div className="text-xs text-slate-400">
-                Xin chào <span className="font-semibold text-slate-600">{userName}</span>, chúc bạn một ngày tốt lành 👋
+                Xin chào <span className="font-semibold text-slate-600">{userName}</span>
               </div>
               <h1 className="mt-0.5 text-lg font-extrabold tracking-tight md:text-xl">Ví Nhỏ Finance</h1>
             </div>
           </div>
           <div className="flex items-center gap-2 md:gap-4">
-            <label className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500 sm:flex">
-              <CalendarDays size={16} />
-              <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="max-w-[120px] bg-transparent text-sm font-semibold text-slate-700 outline-none">
+            <label className="flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2 text-sm text-slate-500 sm:gap-2 sm:px-3">
+              <CalendarDays size={16} className="shrink-0" />
+
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="w-[105px] bg-transparent text-xs font-semibold text-slate-700 outline-none sm:w-auto sm:max-w-[120px] sm:text-sm"
+              >
                 {Array.from({ length: 18 }, (_, i) => {
                   const d = new Date('2026-10-01T00:00:00')
                   d.setMonth(d.getMonth() - i)
+
                   const v = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-                  return <option key={v} value={v}>{MONTHS[d.getMonth()]} {d.getFullYear()}</option>
+
+                  return (
+                    <option key={v} value={v}>
+                      {MONTHS[d.getMonth()]} {d.getFullYear()}
+                    </option>
+                  )
                 })}
               </select>
             </label>
-            <button onClick={() => flash('Bạn đang xem thông báo mới nhất.')} className="relative rounded-xl p-2.5 text-slate-500 hover:bg-slate-100">
-              <Bell size={19} /><span className="absolute right-2 top-2 h-2 w-2 rounded-full border-2 border-white bg-rose-500" />
-            </button>
             <button onClick={openAdd} className="flex items-center gap-2 rounded-xl bg-emerald-500 px-3 py-2.5 text-sm font-bold text-white shadow-md shadow-emerald-100 hover:bg-emerald-600 md:px-4">
               <Plus size={17} /><span className="hidden sm:inline">Thêm giao dịch</span><span className="sm:hidden">Thêm</span>
             </button>
